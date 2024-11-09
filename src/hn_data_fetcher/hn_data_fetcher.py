@@ -168,7 +168,7 @@ async def main(db_name: str, concurrent_requests: int, update_interval: int, db_
     if mode not in ["backfill", "update", "overwrite"]:
         raise ValueError(f"Invalid mode: {mode}. Must be one of: backfill, update, overwrite")
 
-    if mode == "overwrite" and start_id is 0:
+    if mode == "overwrite" and start_id == 0:
         raise ValueError("start_id must be provided when mode is 'overwrite'")
 
     db_queue = queue.Queue(maxsize=db_queue_size)
