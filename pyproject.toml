@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "your-package-name"
+name = "hn-data-fetcher"
 version = "0.1.0"
 authors = [
-  { name="Your Name", email="your.email@example.com" },
+  { name="Adhika Setya Pramudita", email="adhika.setya.p@gmail.com" },
 ]
 description = "A short description of your package"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -19,8 +19,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-"Homepage" = "https://github.com/username/your-package-name"
-"Bug Tracker" = "https://github.com/username/your-package-name/issues"
+"Homepage" = "https://github.com/adhikasp/hn-data-fetcher"
+"Bug Tracker" = "https://github.com/adhikasp/hn-data-fetcher/issues"
 
 [tool.pytest.ini_options]
 addopts = "-ra -q"
