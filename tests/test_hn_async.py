@@ -3,7 +3,7 @@ import os
 import sqlite3
 import json
 import time
-from hn_data_fetcher.hn_data_fetcher import main, get_max_id
+from hn_data_fetcher import main, get_max_id
 from unittest.mock import AsyncMock, patch
 from typing import AsyncGenerator
 from pytest_mock.plugin import MockerFixture
