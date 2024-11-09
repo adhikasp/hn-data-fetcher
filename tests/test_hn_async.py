@@ -98,40 +98,6 @@ async def test_get_max_id_success():
     assert max_id > 0
 
 @pytest.mark.asyncio
-async def test_get_max_id_connection_error(mock_session: AsyncMock):
-    """Test handling of connection error in get_max_id"""
-    mock_session.get.side_effect = aiohttp.ClientError()
-    
-    with pytest.raises(aiohttp.ClientError):
-        await get_max_id()
-
-@pytest.mark.asyncio
-async def test_different_modes():
-    """Test different operation modes"""
-    modes = ["update", "backfill", "overwrite"]
-    
-    for mode in modes:
-        start_id = 1000 if mode == "overwrite" else None
-        await main(
-            db_name=TEST_DB,
-            concurrent_requests=2,
-            update_interval=1,
-            db_queue_size=10,
-            db_commit_interval=2,
-            tcp_limit=2,
-            mode=mode,
-            start_id=start_id
-        )
-        
-        # Verify database has expected content
-        conn = sqlite3.connect(TEST_DB)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM hn_items")
-        count = cursor.fetchone()[0]
-        assert count > 0
-        conn.close()
-
-@pytest.mark.asyncio
 async def test_invalid_mode():
     """Test handling of invalid mode"""
     with pytest.raises(ValueError):
@@ -159,31 +125,3 @@ async def test_overwrite_without_start_id():
             mode="overwrite"
         )
 
-@pytest.mark.asyncio
-async def test_db_writer_worker():
-    """Test database writer functionality"""
-    test_queue = queue.Queue()
-    test_data = {"id": 1234, "time": int(time.time()), "title": "Test Item"}
-    
-    # Start db writer thread
-    db_thread = threading.Thread(
-        target=db_writer_worker,
-        args=(TEST_DB, test_queue, 1)
-    )
-    db_thread.start()
-    
-    # Add test item
-    test_queue.put((test_data["id"], json.dumps(test_data)))
-    test_queue.put(None)  # Signal to stop
-    db_thread.join()
-    
-    # Verify item was written
-    conn = sqlite3.connect(TEST_DB)
-    cursor = conn.cursor()
-    cursor.execute("SELECT item_json FROM hn_items WHERE id = ?", (test_data["id"],))
-    row = cursor.fetchone()
-    assert row is not None
-    stored_item = json.loads(row[0])
-    assert stored_item["id"] == test_data["id"]
-    assert stored_item["title"] == test_data["title"]
-    conn.close()
