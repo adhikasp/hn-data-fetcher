@@ -164,7 +164,13 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-async def main(db_name: str, concurrent_requests: int, update_interval: int, db_queue_size: int, db_commit_interval: int, tcp_limit: int, mode: str, start_id: int = None):
+async def main(db_name: str, concurrent_requests: int, update_interval: int, db_queue_size: int, db_commit_interval: int, tcp_limit: int, mode: str, start_id: int = 0):
+    if mode not in ["backfill", "update", "overwrite"]:
+        raise ValueError(f"Invalid mode: {mode}. Must be one of: backfill, update, overwrite")
+
+    if mode == "overwrite" and start_id is 0:
+        raise ValueError("start_id must be provided when mode is 'overwrite'")
+
     db_queue = queue.Queue(maxsize=db_queue_size)
     db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue, db_commit_interval))
     db_thread.start()
