@@ -78,14 +78,15 @@ async def fetch_and_save(session, db_queue, sem, id):
         sem.release()
 
 
-async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, mode: str = "backfill"):
+async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, mode: str = "backfill", start_id: int = None):
     """
     Args:
         db_queue: Queue for database operations
         db_name: Name of the SQLite database file
         concurrent_requests: Number of concurrent API requests
         update_interval: Progress update interval
-        mode: Operation mode - 'backfill' or 'update'
+        mode: Operation mode - 'backfill', 'update', or 'overwrite'
+        start_id: Starting ID for overwrite mode
     """
     create_db(db_name)
     if mode == "update":
@@ -94,6 +95,11 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
     elif mode == "backfill":
         max_id = get_first_id(db_name)
         first_id = 1
+    elif mode == "overwrite":
+        if start_id is None:
+            raise ValueError("start_id must be provided for overwrite mode")
+        max_id = await get_max_id()
+        first_id = start_id
 
     sem = asyncio.Semaphore(concurrent_requests)
 
@@ -107,6 +113,13 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
                 asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
         elif mode == "update":
             for id in (pbar := tqdm(range(last_id + 1, max_id, 1))):
+                if id % update_interval == 0:
+                    current_time = get_current_processed_time(db_name, str(id), order="desc")
+                    pbar.set_description(f"Processed item: {current_time}")
+                await sem.acquire()
+                asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+        elif mode == "overwrite":
+            for id in (pbar := tqdm(range(first_id, max_id + 1, 1))):
                 if id % update_interval == 0:
                     current_time = get_current_processed_time(db_name, str(id), order="desc")
                     pbar.set_description(f"Processed item: {current_time}")
@@ -131,13 +144,13 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-async def main(db_name: str, concurrent_requests: int, update_interval: int, mode: str):
+async def main(db_name: str, concurrent_requests: int, update_interval: int, mode: str, start_id: int = None):
     db_queue = queue.Queue()
     db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue))
     db_thread.start()
 
     try:
-        await run(db_queue, db_name, concurrent_requests, update_interval, mode=mode)
+        await run(db_queue, db_name, concurrent_requests, update_interval, mode=mode, start_id=start_id)
     except KeyboardInterrupt:
         print("\nCtrl+C pressed. Terminating...")
     except asyncio.CancelledError:
@@ -157,9 +170,11 @@ async def main(db_name: str, concurrent_requests: int, update_interval: int, mod
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Hacker News data fetcher')
-    parser.add_argument('--mode', type=str, choices=['backfill', 'update'],
+    parser.add_argument('--mode', type=str, choices=['backfill', 'update', 'overwrite'],
                        default='update', 
-                       help='Operation mode: update (fetch new items) or backfill (fetch historical items)')
+                       help='Operation mode: update (fetch new items), backfill (fetch historical items), or overwrite (update existing items from start_id)')
+    parser.add_argument('--start-id', type=int,
+                       help='Starting ID for overwrite mode')
     parser.add_argument('--db-name', type=str, default=DEFAULT_DB_NAME,
                        help=f'Path to SQLite database file to store HN items (default: {DEFAULT_DB_NAME})')
     parser.add_argument('--concurrent-requests', type=int, default=DEFAULT_CONCURRENT_REQUESTS,
@@ -168,8 +183,11 @@ if __name__ == "__main__":
                        help=f'How often to update the progress bar, in number of items processed. Lower values give more frequent updates but may impact performance (default: {DEFAULT_PROGRESS_UPDATE_INTERVAL})')
     args = parser.parse_args()
 
+    if args.mode == 'overwrite' and args.start_id is None:
+        parser.error("--start-id is required when mode is 'overwrite'")
+
     try:
-        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.mode))
+        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.mode, args.start_id))
     except RuntimeError:
         print("An error occurred while running the event loop.")
     finally:
