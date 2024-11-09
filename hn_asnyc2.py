@@ -13,8 +13,9 @@ from aiohttp import TCPConnector
 DEFAULT_DB_NAME = "hn2.db"
 DEFAULT_CONCURRENT_REQUESTS = 1000
 DEFAULT_PROGRESS_UPDATE_INTERVAL = 1000
-DB_QUEUE_SIZE = 1000
-DB_COMMIT_INTERVAL = 1000
+DEFAULT_DB_QUEUE_SIZE = 1000
+DEFAULT_DB_COMMIT_INTERVAL = 1000
+DEFAULT_TCP_LIMIT = 0
 
 
 def create_db(db_name):
@@ -49,7 +50,7 @@ async def get_max_id():
     return json.loads(text)
 
 
-def db_writer_worker(db_name, input_queue):
+def db_writer_worker(db_name, input_queue, commit_interval):
     with sqlite3.connect(db_name, isolation_level=None) as db:
         db.execute('pragma journal_mode=wal;')
         db.execute('pragma synchronous=normal;')  # Changed from 1 to normal
@@ -71,7 +72,7 @@ def db_writer_worker(db_name, input_queue):
                     (item, item_json, iso_time)
                 )
                 count += 1
-                if count % DB_COMMIT_INTERVAL == 0:
+                if count % commit_interval == 0:
                     db.execute('COMMIT;')
                     db.execute('BEGIN;')
 
@@ -92,13 +93,14 @@ async def fetch_and_save(session, db_queue, sem, id):
         sem.release()
 
 
-async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, mode: str = "backfill", start_id: int = None):
+async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, tcp_limit: int, mode: str = "backfill", start_id: int = None):
     """
     Args:
         db_queue: Queue for database operations
         db_name: Name of the SQLite database file
         concurrent_requests: Number of concurrent API requests
         update_interval: Progress update interval
+        tcp_limit: Maximum number of TCP connections
         mode: Operation mode - 'backfill', 'update', or 'overwrite'
         start_id: Starting ID for overwrite mode
     """
@@ -117,7 +119,7 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
 
     sem = asyncio.Semaphore(concurrent_requests)
 
-    async with aiohttp.ClientSession(connector=TCPConnector(limit=0)) as session:
+    async with aiohttp.ClientSession(connector=TCPConnector(limit=tcp_limit)) as session:
         tasks = []
         if mode == "backfill":
             for id in (pbar := tqdm(range(max_id, first_id, -1))):
@@ -161,13 +163,13 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-async def main(db_name: str, concurrent_requests: int, update_interval: int, mode: str, start_id: int = None):
-    db_queue = queue.Queue(maxsize=DB_QUEUE_SIZE)
-    db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue))
+async def main(db_name: str, concurrent_requests: int, update_interval: int, db_queue_size: int, db_commit_interval: int, tcp_limit: int, mode: str, start_id: int = None):
+    db_queue = queue.Queue(maxsize=db_queue_size)
+    db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue, db_commit_interval))
     db_thread.start()
 
     try:
-        await run(db_queue, db_name, concurrent_requests, update_interval, mode=mode, start_id=start_id)
+        await run(db_queue, db_name, concurrent_requests, update_interval, tcp_limit, mode=mode, start_id=start_id)
     except KeyboardInterrupt:
         print("\nCtrl+C pressed. Terminating...")
     except asyncio.CancelledError:
@@ -198,13 +200,19 @@ if __name__ == "__main__":
                        help=f'Maximum number of concurrent API requests to HN. Higher values speed up fetching but may hit rate limits (default: {DEFAULT_CONCURRENT_REQUESTS})')
     parser.add_argument('--update-interval', type=int, default=DEFAULT_PROGRESS_UPDATE_INTERVAL,
                        help=f'How often to update the progress bar, in number of items processed. Lower values give more frequent updates but may impact performance (default: {DEFAULT_PROGRESS_UPDATE_INTERVAL})')
+    parser.add_argument('--db-queue-size', type=int, default=DEFAULT_DB_QUEUE_SIZE,
+                       help=f'Maximum size of database operation queue (default: {DEFAULT_DB_QUEUE_SIZE})')
+    parser.add_argument('--db-commit-interval', type=int, default=DEFAULT_DB_COMMIT_INTERVAL,
+                       help=f'How often to commit database transactions, in number of items (default: {DEFAULT_DB_COMMIT_INTERVAL})')
+    parser.add_argument('--tcp-limit', type=int, default=DEFAULT_TCP_LIMIT,
+                       help=f'Maximum number of TCP connections. 0 means unlimited (default: {DEFAULT_TCP_LIMIT})')
     args = parser.parse_args()
 
     if args.mode == 'overwrite' and args.start_id is None:
         parser.error("--start-id is required when mode is 'overwrite'")
 
     try:
-        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.mode, args.start_id))
+        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.db_queue_size, args.db_commit_interval, args.tcp_limit, args.mode, args.start_id))
     except RuntimeError:
         print("An error occurred while running the event loop.")
     finally:
