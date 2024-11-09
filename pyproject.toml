@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name="Adhika Setya Pramudita", email="adhika.setya.p@gmail.com" },
 ]
-description = "A short description of your package"
+description = "A high-performance asynchronous tool for fetching and storing Hacker News items in a SQLite database."
 readme = "readme.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -21,6 +21,9 @@ dependencies = []
 [project.urls]
 "Homepage" = "https://github.com/adhikasp/hn-data-fetcher"
 "Bug Tracker" = "https://github.com/adhikasp/hn-data-fetcher/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hn_data_fetcher"]
 
 [tool.pytest.ini_options]
 addopts = "-ra -q"
