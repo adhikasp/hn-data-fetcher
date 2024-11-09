@@ -79,7 +79,8 @@ def db_writer_worker(db_name, input_queue, commit_interval):
 def get_current_processed_time(db_name: str, id: str, order) -> str:
     with sqlite3.connect(db_name) as db:
         r = db.execute(f"select time from hn_items order by id {order} limit 1")
-        return r.fetchall()[0][0]
+        rows = r.fetchall()
+        return rows[0][0] if len(rows) > 0 else ""
 
 async def fetch_and_save(session, db_queue, sem, id):
     url = f"https://hacker-news.firebaseio.com/v0/item/{id}.json"

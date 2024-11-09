@@ -79,3 +79,20 @@ To use the Hacker News Data Fetcher, follow these steps:
     - You can stop the script at any time by pressing `Ctrl+C`. The script will handle the shutdown gracefully, ensuring that all ongoing transactions are completed.
 
 
+
+## Local Development
+
+1. **Install Development Dependencies**:
+    - Install the package in editable mode and development dependencies:
+      ```sh
+      pip install -e .
+      pip install -r requirements-dev.txt
+      ```
+
+2. **Run Tests**:
+    - Execute the test suite:
+      ```sh
+      pytest tests/ -v
+      ```
+
+
