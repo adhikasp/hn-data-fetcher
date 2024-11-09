@@ -22,6 +22,9 @@ dependencies = []
 "Homepage" = "https://github.com/adhikasp/hn-data-fetcher"
 "Bug Tracker" = "https://github.com/adhikasp/hn-data-fetcher/issues"
 
+[project.scripts]
+hn-data-fetcher = "hn_data_fetcher:cli"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/hn_data_fetcher"]
 

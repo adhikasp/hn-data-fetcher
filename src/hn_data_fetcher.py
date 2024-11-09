@@ -194,7 +194,8 @@ async def main(db_name: str, concurrent_requests: int, update_interval: int, db_
         db_thread.join()
         print("Cleanup complete. Exiting.")
 
-if __name__ == "__main__":
+def cli() -> None:
+    """Command line interface for the Hacker News data fetcher."""
     parser = argparse.ArgumentParser(description='Hacker News data fetcher')
     parser.add_argument('--mode', type=str, choices=['backfill', 'update', 'overwrite'],
                        default='update', 
@@ -224,3 +225,6 @@ if __name__ == "__main__":
         print("An error occurred while running the event loop.")
     finally:
         print("Script execution completed.")
+
+if __name__ == "__main__":
+    cli()

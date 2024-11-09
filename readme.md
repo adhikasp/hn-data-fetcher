@@ -1,27 +1,10 @@
 # Hacker News Data Fetcher
 
-A high-performance asynchronous tool for fetching and storing Hacker News items in a SQLite database.
+A tool to fetch and store Hacker News data in a SQLite database.
 
-## Features
+## Installation
 
-- **Asynchronous Processing**: Uses Python's asyncio and aiohttp for efficient concurrent API requests
-- **Flexible Operation Modes**:
-  - `update`: Fetch new items since last run
-  - `backfill`: Fetch historical items
-  - `overwrite`: Update existing items from a specified ID
-- **Performance Optimized**:
-  - Configurable concurrent requests
-  - SQLite WAL mode for better write performance
-  - Batched database commits
-  - Progress tracking with ETA
-- **Robust Error Handling**:
-  - Graceful shutdown on Ctrl+C
-  - Connection error recovery
-  - Transaction management
-
-## Usage
-
-To use the Hacker News Data Fetcher, follow these steps:
+To install the Hacker News Data Fetcher, follow these steps:
 
 1. **Clone the Repository**:
     ```sh
@@ -94,5 +77,3 @@ To use the Hacker News Data Fetcher, follow these steps:
       ```sh
       pytest tests/ -v
       ```
-
-
