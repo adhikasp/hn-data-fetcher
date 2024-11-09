@@ -7,11 +7,14 @@ import queue
 import threading
 from datetime import datetime
 import argparse
+from aiohttp import TCPConnector
 
 # Default constants
 DEFAULT_DB_NAME = "hn2.db"
-DEFAULT_CONCURRENT_REQUESTS = 300
+DEFAULT_CONCURRENT_REQUESTS = 1000
 DEFAULT_PROGRESS_UPDATE_INTERVAL = 1000
+DB_QUEUE_SIZE = 1000
+DB_COMMIT_INTERVAL = 1000
 
 
 def create_db(db_name):
@@ -19,6 +22,9 @@ def create_db(db_name):
         db.execute(
             "CREATE TABLE IF NOT EXISTS hn_items(id int PRIMARY KEY, item_json blob, time text)"
         )
+        db.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode at DB creation
+        db.execute("PRAGMA synchronous=NORMAL")  # Optimize write performance
+        db.execute("PRAGMA cache_size=10000")  # Increase cache size
         db.commit()
 
 
@@ -35,7 +41,7 @@ def get_first_id(db_name) -> int:
         return int(rows[0][0]) - 1 if rows[0][0] else 0
 
 async def get_max_id():
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=TCPConnector(limit=0)) as session:
         async with session.get(
             "https://hacker-news.firebaseio.com/v0/maxitem.json"
         ) as response:
@@ -46,10 +52,14 @@ async def get_max_id():
 def db_writer_worker(db_name, input_queue):
     with sqlite3.connect(db_name, isolation_level=None) as db:
         db.execute('pragma journal_mode=wal;')
-        db.execute('pragma synchronous=1;')
+        db.execute('pragma synchronous=normal;')  # Changed from 1 to normal
+        db.execute('pragma cache_size=10000;')
+        db.execute('BEGIN;')  # Start transaction
+        count = 0
         while True:
             data = input_queue.get()
             if data is None:
+                db.execute('COMMIT;')  # Commit final transaction
                 break
             item, item_json = data
             if "time" in json.loads(item_json):
@@ -60,6 +70,10 @@ def db_writer_worker(db_name, input_queue):
                     VALUES(?, ?, ?)""", 
                     (item, item_json, iso_time)
                 )
+                count += 1
+                if count % DB_COMMIT_INTERVAL == 0:
+                    db.execute('COMMIT;')
+                    db.execute('BEGIN;')
 
 def get_current_processed_time(db_name: str, id: str, order) -> str:
     with sqlite3.connect(db_name) as db:
@@ -103,31 +117,34 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
 
     sem = asyncio.Semaphore(concurrent_requests)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=TCPConnector(limit=0)) as session:
+        tasks = []
         if mode == "backfill":
             for id in (pbar := tqdm(range(max_id, first_id, -1))):
                 if id % update_interval == 0:
                     current_time = get_current_processed_time(db_name, str(id), order="asc")
                     pbar.set_description(f"Processed item: {current_time}")
                 await sem.acquire()
-                asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                task = asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                tasks.append(task)
         elif mode == "update":
             for id in (pbar := tqdm(range(last_id + 1, max_id, 1))):
                 if id % update_interval == 0:
                     current_time = get_current_processed_time(db_name, str(id), order="desc")
                     pbar.set_description(f"Processed item: {current_time}")
                 await sem.acquire()
-                asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                task = asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                tasks.append(task)
         elif mode == "overwrite":
             for id in (pbar := tqdm(range(first_id, max_id + 1, 1))):
                 if id % update_interval == 0:
                     current_time = get_current_processed_time(db_name, str(id), order="desc")
                     pbar.set_description(f"Processed item: {current_time}")
                 await sem.acquire()
-                asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                task = asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                tasks.append(task)
 
         # Wait for all tasks to complete
-        tasks = asyncio.all_tasks() - {asyncio.current_task()}
         await asyncio.gather(*tasks)
 
         for i in range(concurrent_requests):
@@ -145,7 +162,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 async def main(db_name: str, concurrent_requests: int, update_interval: int, mode: str, start_id: int = None):
-    db_queue = queue.Queue()
+    db_queue = queue.Queue(maxsize=DB_QUEUE_SIZE)
     db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue))
     db_thread.start()
 
