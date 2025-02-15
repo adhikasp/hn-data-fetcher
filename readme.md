@@ -1,6 +1,6 @@
 # Hacker News Data Fetcher
 
-A tool to fetch and store Hacker News data in a SQLite database.
+A high-performance tool to fetch and store Hacker News data in Parquet format.
 
 ## Installation
 
@@ -15,24 +15,23 @@ To install the Hacker News Data Fetcher, follow these steps:
     - The script can be run in three different modes: `update`, `backfill`, and `overwrite`.
     - Use the following command to run the script:
       ```sh
-      hn_data_fetcher --mode <mode> [--start-id <start_id>] [--db-name <db_name>] [--concurrent-requests <concurrent_requests>] [--update-interval <update_interval>] [--db-queue-size <db_queue_size>] [--db-commit-interval <db_commit_interval>] [--tcp-limit <tcp_limit>]
+      hn-data-fetcher --mode <mode> [--start-id <start_id>] [--data-dir <data_dir>] [--concurrent-requests <concurrent_requests>] [--update-interval <update_interval>] [--batch-size <batch_size>] [--tcp-limit <tcp_limit>]
       ```
     - **Parameters**:
       - `--mode`: Operation mode. Choices are `update`, `backfill`, or `overwrite`.
       - `--start-id`: Starting ID for `overwrite` mode (required if mode is `overwrite`).
-      - `--db-name`: Path to the SQLite database file to store HN items (default: `hn2.db`).
+      - `--data-dir`: Directory to store Parquet files (default: `hn_data`).
       - `--concurrent-requests`: Maximum number of concurrent API requests to HN (default: `1000`).
       - `--update-interval`: How often to update the progress bar, in number of items processed (default: `1000`).
-      - `--db-queue-size`: Maximum size of the database operation queue (default: `1000`).
-      - `--db-commit-interval`: How often to commit database transactions, in number of items (default: `1000`).
+      - `--batch-size`: Number of items to write in each Parquet batch (default: `1000`).
       - `--tcp-limit`: Maximum number of TCP connections. `0` means unlimited (default: `0`).
 
     - **Examples**:
-      - To update the database with new items:
+      - To update with new items:
         ```sh
         hn-data-fetcher --mode update
         ```
-      - To backfill the database with historical items:
+      - To backfill with historical items:
         ```sh
         hn-data-fetcher --mode backfill
         ```
@@ -43,12 +42,25 @@ To install the Hacker News Data Fetcher, follow these steps:
 
 3. **Monitor Progress**:
     - The script provides a progress bar with an estimated time of arrival (ETA) for completion.
-    - It also handles errors gracefully and ensures that the database is updated correctly.
+    - It also handles errors gracefully and ensures that the data is written correctly.
 
 4. **Graceful Shutdown**:
     - You can stop the script at any time by pressing `Ctrl+C`. The script will handle the shutdown gracefully, ensuring that all ongoing transactions are completed.
 
+## Data Storage
 
+The fetched data is stored in Parquet format, which offers several advantages:
+
+- Efficient columnar storage for better query performance
+- Compression to reduce storage space
+- Schema evolution support
+- Compatibility with big data tools (Spark, Dask, etc.)
+
+Each Parquet file contains a batch of HN items with the following schema:
+- `id`: Item ID
+- `time`: Unix timestamp
+- `iso_time`: ISO formatted timestamp
+- Other HN item fields (type, title, url, etc.)
 
 ## Local Development
 

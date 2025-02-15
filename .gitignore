@@ -1,6 +1,7 @@
 *.db
 *.db-shm
 *.db-wal
+*.parquet
 exploration
 __pycache__
 *.egg-info/
