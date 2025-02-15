@@ -24,6 +24,7 @@ dependencies = []
 
 [project.scripts]
 hn-data-fetcher = "hn_data_fetcher:cli"
+hn-to-hive = "hn_data_fetcher:hn_to_hive"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hn_data_fetcher"]
