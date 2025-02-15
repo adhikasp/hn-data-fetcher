@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hn-data-fetcher"
-version = "2.0.0"
+version = "1.0.3"
 authors = [
   { name="Adhika Setya Pramudita", email="adhika.setya.p@gmail.com" },
 ]
-description = "A high-performance asynchronous tool for fetching and storing Hacker News items in Parquet format."
+description = "A high-performance asynchronous tool for fetching and storing Hacker News items in a SQLite database."
 readme = "readme.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -16,12 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = [
-    "aiohttp>=3.8.0",
-    "tqdm>=4.65.0",
-    "pandas>=2.0.0",
-    "pyarrow>=14.0.1"
-]
+dependencies = []
 
 [project.urls]
 "Homepage" = "https://github.com/adhikasp/hn-data-fetcher"
