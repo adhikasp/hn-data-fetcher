@@ -63,18 +63,23 @@ def db_writer_worker(db_name, input_queue, commit_interval):
                 db.execute('COMMIT;')  # Commit final transaction
                 break
             item, item_json = data
-            if "time" in json.loads(item_json):
-                time = json.loads(item_json)["time"]
-                iso_time = datetime.fromtimestamp(time).isoformat()
-                db.execute(
-                    """INSERT OR REPLACE INTO hn_items(id, item_json, time) 
-                    VALUES(?, ?, ?)""", 
-                    (item, item_json, iso_time)
-                )
-                count += 1
-                if count % commit_interval == 0:
-                    db.execute('COMMIT;')
-                    db.execute('BEGIN;')
+            try:
+                json_data = json.loads(item_json)
+                if json_data and isinstance(json_data, dict) and "time" in json_data:
+                    time = json_data["time"]
+                    iso_time = datetime.fromtimestamp(time).isoformat()
+                    db.execute(
+                        """INSERT OR REPLACE INTO hn_items(id, item_json, time) 
+                        VALUES(?, ?, ?)""", 
+                        (item, item_json, iso_time)
+                    )
+                    count += 1
+                    if count % commit_interval == 0:
+                        db.execute('COMMIT;')
+                        db.execute('BEGIN;')
+            except (json.JSONDecodeError, TypeError):
+                # Skip items with invalid JSON or None values
+                continue
 
 def get_current_processed_time(db_name: str, id: str, order) -> str:
     with sqlite3.connect(db_name) as db:
@@ -86,10 +91,15 @@ async def fetch_and_save(session, db_queue, sem, id):
     url = f"https://hacker-news.firebaseio.com/v0/item/{id}.json"
     try:
         async with session.get(url) as response:
-            text = await response.text()
-            db_queue.put((id, text))
+            if response.status == 200:
+                text = await response.text()
+                # Only queue valid JSON responses
+                if text and text.strip() and text.strip().lower() != "null":
+                    db_queue.put((id, text))
+            else:
+                print(f"Error fetching item {id}: HTTP {response.status}")
     except Exception as e:
-        print(e)
+        print(f"Exception fetching item {id}: {e}")
     finally:
         sem.release()
 
