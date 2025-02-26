@@ -17,6 +17,8 @@ from .hn_data_fetcher import (
     cli,
 )
 
+from .hn_to_hive import main as hn_to_hive
+
 __all__ = [
     'DEFAULT_DB_NAME',
     'DEFAULT_CONCURRENT_REQUESTS', 
@@ -34,4 +36,5 @@ __all__ = [
     'run',
     'main',
     'cli',
+    'hn_to_hive',
 ]
