@@ -42,6 +42,33 @@ def get_first_id(db_name) -> int:
         rows = cursor.fetchall()
         return int(rows[0][0]) - 1 if rows[0][0] else 0
 
+def get_id_from_date(db_name: str, target_date: str) -> int:
+    """Find the earliest item ID from a given date.
+    
+    Args:
+        db_name: Name of the SQLite database file
+        target_date: Date string in ISO format (YYYY-MM-DD)
+        
+    Returns:
+        int: The earliest item ID from the given date, or 0 if no items found
+    """
+    next_day = f"{target_date.split('T')[0]}T00:00:00"
+    # Calculate the next day by adding T23:59:59 to ensure we get the full day
+    next_day_end = f"{target_date.split('T')[0]}T23:59:59"
+    
+    with sqlite3.connect(db_name) as db:
+        cursor = db.execute(
+            "SELECT id FROM hn_items WHERE time >= ? AND time <= ?",
+            (next_day, next_day_end)
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return 0
+        
+        # Extract all IDs and find the minimum using Python
+        ids = [row[0] for row in rows]
+        return min(ids) if ids else 0
+
 async def get_max_id():
     async with aiohttp.ClientSession(connector=TCPConnector(limit=0)) as session:
         async with session.get(
@@ -105,7 +132,7 @@ async def fetch_and_save(session, db_queue, sem, id):
         sem.release()
 
 
-async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, tcp_limit: int, mode: str = "backfill", start_id: int = None):
+async def run(db_queue, db_name: str, concurrent_requests: int, update_interval: int, tcp_limit: int, mode: str = "backfill", start_id: int = None, start_date: str = None):
     """
     Args:
         db_queue: Queue for database operations
@@ -113,8 +140,9 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
         concurrent_requests: Number of concurrent API requests
         update_interval: Progress update interval
         tcp_limit: Maximum number of TCP connections
-        mode: Operation mode - 'backfill', 'update', or 'overwrite'
+        mode: Operation mode - 'backfill', 'update', 'overwrite', or 'overwrite-from-date'
         start_id: Starting ID for overwrite mode
+        start_date: Starting date for overwrite-from-date mode (YYYY-MM-DD)
     """
     create_db(db_name)
     if mode == "update":
@@ -128,6 +156,15 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
             raise ValueError("start_id must be provided for overwrite mode")
         max_id = await get_max_id()
         first_id = start_id
+    elif mode == "overwrite-from-date":
+        if start_date is None:
+            raise ValueError("start_date must be provided for overwrite-from-date mode")
+        first_id = get_id_from_date(db_name, start_date)
+        if first_id == 0:
+            raise ValueError(f"No items found from date {start_date}")
+        max_id = await get_max_id()
+    else:
+        raise ValueError(f"Invalid mode: {mode}")
 
     sem = asyncio.Semaphore(concurrent_requests)
 
@@ -157,6 +194,14 @@ async def run(db_queue, db_name: str, concurrent_requests: int, update_interval:
                 await sem.acquire()
                 task = asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
                 tasks.append(task)
+        elif mode == "overwrite-from-date":
+            for id in (pbar := tqdm(range(first_id, max_id + 1, 1))):
+                if id % update_interval == 0:
+                    current_time = get_current_processed_time(db_name, str(id), order="desc")
+                    pbar.set_description(f"Processed item: {current_time}")
+                await sem.acquire()
+                task = asyncio.create_task(fetch_and_save(session, db_queue, sem, id))
+                tasks.append(task)
 
         # Wait for all tasks to complete
         await asyncio.gather(*tasks)
@@ -175,19 +220,22 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-async def main(db_name: str, concurrent_requests: int, update_interval: int, db_queue_size: int, db_commit_interval: int, tcp_limit: int, mode: str, start_id: int = 0):
-    if mode not in ["backfill", "update", "overwrite"]:
-        raise ValueError(f"Invalid mode: {mode}. Must be one of: backfill, update, overwrite")
+async def main(db_name: str, concurrent_requests: int, update_interval: int, db_queue_size: int, db_commit_interval: int, tcp_limit: int, mode: str, start_id: int = 0, start_date: str = None):
+    if mode not in ["backfill", "update", "overwrite", "overwrite-from-date"]:
+        raise ValueError(f"Invalid mode: {mode}. Must be one of: backfill, update, overwrite, overwrite-from-date")
 
     if mode == "overwrite" and start_id == 0:
         raise ValueError("start_id must be provided when mode is 'overwrite'")
+        
+    if mode == "overwrite-from-date" and not start_date:
+        raise ValueError("start_date must be provided when mode is 'overwrite-from-date'")
 
     db_queue = queue.Queue(maxsize=db_queue_size)
     db_thread = threading.Thread(target=db_writer_worker, args=(db_name, db_queue, db_commit_interval))
     db_thread.start()
 
     try:
-        await run(db_queue, db_name, concurrent_requests, update_interval, tcp_limit, mode=mode, start_id=start_id)
+        await run(db_queue, db_name, concurrent_requests, update_interval, tcp_limit, mode=mode, start_id=start_id, start_date=start_date)
     except KeyboardInterrupt:
         print("\nCtrl+C pressed. Terminating...")
     except asyncio.CancelledError:
@@ -208,11 +256,13 @@ async def main(db_name: str, concurrent_requests: int, update_interval: int, db_
 def cli() -> None:
     """Command line interface for the Hacker News data fetcher."""
     parser = argparse.ArgumentParser(description='Hacker News data fetcher')
-    parser.add_argument('--mode', type=str, choices=['backfill', 'update', 'overwrite'],
+    parser.add_argument('--mode', type=str, choices=['backfill', 'update', 'overwrite', 'overwrite-from-date'],
                        default='update', 
-                       help='Operation mode: update (fetch new items), backfill (fetch historical items), or overwrite (update existing items from start_id)')
+                       help='Operation mode: update (fetch new items), backfill (fetch historical items), or overwrite (update existing items from start_id) or overwrite-from-date (update existing items from start_date)')
     parser.add_argument('--start-id', type=int,
                        help='Starting ID for overwrite mode')
+    parser.add_argument('--start-date', type=str,
+                       help='Starting date for overwrite-from-date mode (YYYY-MM-DD)')
     parser.add_argument('--db-name', type=str, default=DEFAULT_DB_NAME,
                        help=f'Path to SQLite database file to store HN items (default: {DEFAULT_DB_NAME})')
     parser.add_argument('--concurrent-requests', type=int, default=DEFAULT_CONCURRENT_REQUESTS,
@@ -231,7 +281,7 @@ def cli() -> None:
         parser.error("--start-id is required when mode is 'overwrite'")
 
     try:
-        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.db_queue_size, args.db_commit_interval, args.tcp_limit, args.mode, args.start_id))
+        asyncio.run(main(args.db_name, args.concurrent_requests, args.update_interval, args.db_queue_size, args.db_commit_interval, args.tcp_limit, args.mode, args.start_id, args.start_date))
     except RuntimeError:
         print("An error occurred while running the event loop.")
     finally:
