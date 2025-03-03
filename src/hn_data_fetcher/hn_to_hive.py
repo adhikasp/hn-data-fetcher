@@ -12,7 +12,6 @@ from sqlalchemy import create_engine
 import os
 import calendar
 import sys
-from typing import Optional, Dict, Any, List, Union, Tuple
 
 
 def main() -> int:
