@@ -18,14 +18,14 @@ from typing import Optional, Dict, Any, List, Union, Tuple
 def main() -> int:
     """
     Main function to convert Hacker News data from SQLite to Hive-compatible Parquet format.
-    
+
     This function:
     1. Connects to the SQLite database containing Hacker News items
     2. Extracts data month by month, starting from the current month
     3. Converts the data to a structured DataFrame
     4. Saves each month's data as a Parquet file in a Hive-compatible directory structure
     5. Processes all months until it finds an existing partition (except for current and previous month)
-    
+
     Returns:
         int: Exit code (0 for success)
     """
@@ -54,7 +54,9 @@ def main() -> int:
         is_processing_current_month = (
             current_date.year == year and current_date.month == month
         )
-        is_processing_last_month = current_date.month - 1 == month and current_date.day <= 7
+        is_processing_last_month = (
+            current_date.month - 1 == month and current_date.day <= 7
+        )
         if not os.path.exists(partition_path) or (
             is_processing_current_month or is_processing_last_month
         ):
@@ -134,6 +136,7 @@ def main() -> int:
 
     print("Data has been partitioned and saved in Hive format")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
