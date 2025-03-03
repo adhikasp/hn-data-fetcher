@@ -23,6 +23,7 @@ def create_db(db_name):
         db.execute(
             "CREATE TABLE IF NOT EXISTS hn_items(id int PRIMARY KEY, item_json blob, time text)"
         )
+        db.execute("CREATE INDEX IF NOT EXISTS idx_hn_items_time ON hn_items(time)")
         db.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode at DB creation
         db.execute("PRAGMA synchronous=NORMAL")  # Optimize write performance
         db.execute("PRAGMA cache_size=10000")  # Increase cache size

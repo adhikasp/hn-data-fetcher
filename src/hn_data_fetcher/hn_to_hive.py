@@ -30,7 +30,9 @@ def main() -> int:
         int: Exit code (0 for success)
     """
     # Connect to SQLite database
-    engine = create_engine("sqlite:////mnt/e/Workspace/script/hn/hn2.db")
+    # Find the database in the current working directory
+    db_path = os.path.join(os.getcwd(), "hn2.db")
+    engine = create_engine(f"sqlite:///{db_path}")
 
     # Create base output directory
     base_dir = "data_parquet"
@@ -88,7 +90,7 @@ def main() -> int:
 
             # Stop processing if no data found
             if df.empty:
-                print(f"No data found for {year}-{month:02d}")
+                print(f"No data found for {year}-{month:02d} from sql file")
                 break
 
             # Convert JSON string arrays to actual lists
