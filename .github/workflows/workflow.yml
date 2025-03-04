@@ -9,11 +9,50 @@ on:
     types: [created, edited]
 
 jobs:
+  check_and_create_release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'release')
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+      - name: Install toml parser
+        run: pip install tomli
+      - name: Get version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            Release version ${{ steps.get_version.outputs.version }}
+            
+            Full commit message:
+            ${{ github.event.head_commit.message }}
+
   publish:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && (github.event.action == 'created' || github.event.action == 'edited')
+    needs: check_and_create_release
+    if: |
+      (github.event_name == 'release' && (github.event.action == 'created' || github.event.action == 'edited')) ||
+      (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release'))
     permissions:
       id-token: write
+      contents: write
 
     steps:
     - uses: actions/checkout@v3
