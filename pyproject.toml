@@ -20,6 +20,9 @@ dependencies = [
     "pandas>=1.3.0",
     "sqlalchemy>=1.4.0",
     "pyarrow>=7.0.0",  # Required for parquet support
+    "boto3>=1.26.0",  # For S3 operations
+    "python-dotenv>=1.0.0",  # For environment variables
+    "rich>=13.0.0",  # For beautiful console output
 ]
 
 [project.optional-dependencies]
@@ -39,6 +42,8 @@ dev = [
 [project.scripts]
 hn-data-fetcher = "hn_data_fetcher:main"
 hn-to-hive = "hn_data_fetcher:hn_to_hive"
+upload-to-tigris = "hn_data_fetcher:upload_to_tigris"
+delete-from-tigris = "hn_data_fetcher:delete_from_tigris"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hn_data_fetcher"]
