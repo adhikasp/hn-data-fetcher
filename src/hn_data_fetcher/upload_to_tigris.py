@@ -167,7 +167,9 @@ def main():
     console.print(f"[green]Found {len(parquet_files)} parquet files to process[/green]")
     
     # Get list of existing S3 objects
-    bucket = "hacker-news-data.adhikasp.my.id"
+    bucket = os.getenv("S3_BUCKET_NAME")
+    if bucket is None:
+        raise ValueError("S3_BUCKET_NAME environment variable must be set")
     existing_objects = list_s3_objects(s3_client, bucket)
     console.print(f"[green]Found {len(existing_objects)} existing objects in S3[/green]")
     
