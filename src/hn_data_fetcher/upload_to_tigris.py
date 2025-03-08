@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import List, NamedTuple
+from typing import List, NamedTuple, Set
 from datetime import datetime
 
 import boto3
@@ -51,6 +51,32 @@ def get_s3_client():
     )
 
 
+def list_s3_objects(s3_client, bucket: str) -> Set[str]:
+    """
+    List all objects in the S3 bucket.
+    
+    Args:
+        s3_client: Boto3 S3 client
+        bucket: Target bucket name
+        
+    Returns:
+        Set of S3 keys for existing objects
+    """
+    try:
+        existing_objects = set()
+        paginator = s3_client.get_paginator('list_objects_v2')
+        
+        for page in paginator.paginate(Bucket=bucket):
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    existing_objects.add(obj['Key'])
+                    
+        return existing_objects
+    except Exception as e:
+        console.print(f"[red]Error listing bucket contents: {str(e)}[/red]")
+        return set()
+
+
 def list_parquet_files(directory: str = "data_parquet") -> List[ParquetFile]:
     """
     List all parquet files in the specified directory, preserving Hive partition structure.
@@ -80,34 +106,29 @@ def list_parquet_files(directory: str = "data_parquet") -> List[ParquetFile]:
     return sorted(parquet_files, key=lambda x: x.date, reverse=True)
 
 
-def should_upload_file(s3_client, parquet_file: ParquetFile, bucket: str) -> bool:
+def should_upload_file(parquet_file: ParquetFile, existing_objects: Set[str], all_files: List[ParquetFile]) -> bool:
     """
     Check if file should be uploaded based on existence and if it's the newest.
     
     Args:
-        s3_client: Boto3 S3 client
         parquet_file: ParquetFile containing file path and partition info
-        bucket: Target bucket name
+        existing_objects: Set of existing S3 object keys
+        all_files: List of all ParquetFile objects being processed
         
     Returns:
         bool: True if file should be uploaded
     """
-    try:
-        s3_client.head_object(Bucket=bucket, Key=parquet_file.s3_key)
-        # File exists, only upload if it's the newest or last month
-        newest_date = max(parquet_files, key=lambda x: x.date).date
-        # Get the second newest date (last month)
-        sorted_dates = sorted(set(pf.date for pf in parquet_files), reverse=True)
-        last_month_date = sorted_dates[1] if len(sorted_dates) > 1 else newest_date
-        return parquet_file.date == newest_date or parquet_file.date == last_month_date
-    except ClientError as e:
-        if e.response['Error']['Code'] == '404':
-            # File doesn't exist, should upload
-            return True
-        else:
-            # Some other error occurred
-            console.print(f"[red]Error checking file existence: {str(e)}[/red]")
-            return False
+    # If file doesn't exist in S3, it should be uploaded
+    if parquet_file.s3_key not in existing_objects:
+        return True
+        
+    # File exists, only upload if it's the newest or last month
+    newest_date = max(all_files, key=lambda x: x.date).date
+    # Get the second newest date (last month)
+    sorted_dates = sorted(set(pf.date for pf in all_files), reverse=True)
+    last_month_date = sorted_dates[1] if len(sorted_dates) > 1 else newest_date
+    
+    return parquet_file.date == newest_date or parquet_file.date == last_month_date
 
 
 def upload_file(s3_client, parquet_file: ParquetFile, bucket: str = "hacker-news") -> bool:
@@ -138,13 +159,17 @@ def main():
     s3_client = get_s3_client()
     
     # List parquet files with partition info
-    global parquet_files  # Make it accessible in should_upload_file
     parquet_files = list_parquet_files()
     if not parquet_files:
         console.print("[yellow]No parquet files found in data_parquet directory[/yellow]")
         return
     
     console.print(f"[green]Found {len(parquet_files)} parquet files to process[/green]")
+    
+    # Get list of existing S3 objects
+    bucket = "hacker-news-data.adhikasp.my.id"
+    existing_objects = list_s3_objects(s3_client, bucket)
+    console.print(f"[green]Found {len(existing_objects)} existing objects in S3[/green]")
     
     # Upload files with progress bar
     with Progress(
@@ -163,9 +188,9 @@ def main():
                 description=f"Processing year={parquet_file.year}/month={parquet_file.month}"
             )
             
-            if should_upload_file(s3_client, parquet_file, "hacker-news"):
+            if should_upload_file(parquet_file, existing_objects, parquet_files):
                 console.print(f"[cyan]Uploading {parquet_file.s3_key}[/cyan]")
-                upload_file(s3_client, parquet_file)
+                upload_file(s3_client, parquet_file, bucket)
             else:
                 console.print(f"[yellow]Skipping {parquet_file.s3_key} - already exists[/yellow]")
             
