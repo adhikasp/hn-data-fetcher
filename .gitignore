@@ -7,3 +7,6 @@ __pycache__
 .pytest_cache/
 *.parquet
 .env
+data/
+work/
+.venv/
